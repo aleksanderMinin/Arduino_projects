@@ -27,9 +27,15 @@
     <ClInclude Include="mcp_can_dfs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Talk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="mcp_can.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Talk.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

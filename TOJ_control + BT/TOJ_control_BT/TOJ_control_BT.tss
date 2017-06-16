@@ -2,6 +2,15 @@
 <ArrayOfArrayOfArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <ArrayOfArrayOfString>
     <ArrayOfString>
+      <string>E:\sourse\Arduino_projects\TOJ_control + BT\TOJ_control_BT\mcp_can.h</string>
+    </ArrayOfString>
+    <ArrayOfString>
+      <string>E:\sourse\Arduino_projects\TOJ_control + BT\TOJ_control_BT\Talk.cpp</string>
+      <string>E:\sourse\Arduino_projects\TOJ_control + BT\TOJ_control_BT\Talk.h</string>
+    </ArrayOfString>
+  </ArrayOfArrayOfString>
+  <ArrayOfArrayOfString>
+    <ArrayOfString>
       <string>E:\sourse\Arduino_projects\TOJ_control + BT\TOJ_control_BT\TOJ_control_BT.ino</string>
     </ArrayOfString>
   </ArrayOfArrayOfString>

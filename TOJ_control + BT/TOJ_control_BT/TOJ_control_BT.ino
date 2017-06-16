@@ -11,6 +11,9 @@
   ячейка EEPROM[11] - ремя работы основного цикла программы
 
 */
+#include "Talk.h"
+#include <Scheduler.h>
+#include <HID.h>
 #include <EEPROM.h>
 #include "mcp_can.h"
 #include <SPI.h>
@@ -26,7 +29,6 @@ int temp_val;               //временная переменная для в�
 int temp[9];                //границы вкл/выкл температуры(точки)
 int temp_toj;               //значение с датчика температуры
 byte i;                     //переменная для циклов
-byte cooltime;             //время работы в первое включение EEPROM 10
 int delaytime;              //время задержки основного цикла работы EEPROM 11
 OneWire ds(4);              // пин датчика температуры
 
@@ -35,36 +37,35 @@ long unsigned int rxId;
 unsigned char len = 0;
 unsigned char rxBuf[8];
 
-MCP_CAN CAN0(10);           // Set CS to pin 10
+MCP_CAN CAN0(10);	// Set CS to pin 10
 
 int Blick(int time) {
   delay(time / 2);
-  digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)
+  //digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)
   delay(time / 2);          // wait for a time
-  digitalWrite(13, LOW);    // turn the LED off by making the voltage LOW
+  //digitalWrite(13, LOW);    // turn the LED off by making the voltage LOW
 }
 
 void setup() {
   pinMode(analogPin, INPUT); //инициализация пина с термодатчиком
-  Serial.begin(115200);        // открывает последовательный порт, устанавливает скорость 9600 бит
+  Serial.begin(115200);      // открывает последовательный порт, устанавливает скорость 9600 бит
   //Serial.setTimeout(20);
-  CAN0.begin(CAN_500KBPS);    // init can bus : baudrate = 500k
-  pinMode(13, OUTPUT);
+  CAN0.begin(CAN_500KBPS);   // init can bus : baudrate = 500k
+  pinMode(13, OUTPUT);		 	
   pinMode(9, INPUT);         //пин 9 INT MCP модуля
-  // pinMode(4,INPUT);           // пин 4 датчика температуры
+  // pinMode(4,INPUT);       // пин 4 датчика температуры
   for (i = 1; i <= 4; i++)   // инициализация пинов реле
     pinMode(relayPin[i], OUTPUT);
 
   // реле на LOW,  будут включать вентилятор
   // реле на HIGH,  будут выключать вентилятор
-
-  cooltime = EEPROM.read(10);
+    
   delaytime = EEPROM.read(11) * 1000;
 
-  //флаг вкл/выкл вентиляторы в начале пуска
+  //вкл/выкл вентиляторы в начале пуска
   if (EEPROM.read(9) == 1) {
-    RelayState(1, 1, 1, 1);        //включаем все вентиляторы
-    Blick(cooltime * 1000); //время работы в начале пуска
+    RelayState(1, 1, 1, 1);        //включаем все вентиляторы	
+	Blick(EEPROM.read(10) * 1000); //время работы в начале пуска(cooltime)
 
     /* отключаем вентиляторы последовательно для проверки
       и выявления неисправного*/
@@ -103,18 +104,17 @@ void(* resetFunc) (void) = 0;
 //2-------3---
 void Talk() {
   if (Serial.available() > 0 || smsbuffer.length() > 0) {   //если есть сообщение
-    //добавляем сообщения в буфер
-    if (Serial.available() > 0 && smsbuffer.length() > 0) 
-      smsbuffer = smsbuffer + char('\n') + Serial.readString();
-    else 
-      smsbuffer = smsbuffer + Serial.readString();
-
-    sms = "";
+    
+	//добавляем сообщения в буфер
+    smsbuffer = smsbuffer + char('\n') + Serial.readString();
+        
     //выбираем из буфера строку 
+	sms = "";
     while ( byte(smsbuffer[0]) != 10 && smsbuffer.length() > 0){
       sms = sms + smsbuffer[0];
       smsbuffer.remove(0,1);
     }
+
     if ( smsbuffer[0] == char('\n') ) //убираем перенос после строки
       smsbuffer.remove(0,1);
       
@@ -134,26 +134,8 @@ void Talk() {
 	  RelayState(0, 0, 0, 0);
       smsResult = true;
     }
-    if (sms.substring(0, 2) == "no") {    // не трогаем реле
-      manual = 0;
-      Serial.println("manual no");
-      smsResult = true;
-    }
-    if (sms.substring(0, 6) == "manual" ) {    // включаем один выбранный релЭ
-      manual = int(sms[6]) - 48;
-      if (manual >= 1 && manual <= 4) {
-        Serial.print("manual ");
-        Serial.println(manual);
-        for (i = 1; i <= 4; i++)
-          if (i == manual) digitalWrite(relayPin[manual], LOW);
-          else digitalWrite(relayPin[i], HIGH);
-        smsResult = true;
-      }
-      else {
-        manual = 0;
-        Serial.println("manual must be [1..4]");
-      }
-    }
+	talk_no();
+	talk_manual();
 
     //задание точки температуры
     //N - порядковый номер точки, ххх - трехзначное число с датчика температуры
@@ -219,7 +201,6 @@ void Talk() {
       }
       if (sms[8] > '0' && sms[8] <= '9') {
         EEPROM.write(10, byte(int(sms[8]) - 48));
-        cooltime = EEPROM.read(10) * 1000;
         Serial.print("cooltime now -> ");
         Serial.println(EEPROM.read(10));
       }
@@ -266,6 +247,7 @@ void Talk() {
     }
   }
 }
+
 //вывод температуры в распред коробке
 void Temp() {
   byte data[2];
