@@ -39,13 +39,6 @@ unsigned char rxBuf[8];
 
 MCP_CAN CAN0(10);	// Set CS to pin 10
 
-int Blick(int time) {
-  delay(time / 2);
-  //digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(time / 2);          // wait for a time
-  //digitalWrite(13, LOW);    // turn the LED off by making the voltage LOW
-}
-
 void setup() {
   pinMode(analogPin, INPUT); //инициализация пина с термодатчиком
   Serial.begin(115200);      // открывает последовательный порт, устанавливает скорость 9600 бит
@@ -65,13 +58,13 @@ void setup() {
   //вкл/выкл вентиляторы в начале пуска
   if (EEPROM.read(9) == 1) {
     RelayState(1, 1, 1, 1);        //включаем все вентиляторы
-	Blick(EEPROM.read(10) * 1000); //время работы в начале пуска(cooltime)
+	delay(EEPROM.read(10) * 1000); //время работы в начале пуска(cooltime)
 
     /* отключаем вентиляторы последовательно для проверки
       и выявления неисправного*/
     for (i = 1; i <= 4; i++) {
       digitalWrite(relayPin[i], HIGH);
-      Blick(1000);
+      delay(1000);
     }
   }
 
@@ -206,33 +199,31 @@ void loopTalk() {
     }
     if (sms.substring(0, 5) == "flash") {  //вывод в терминал из памяти сохраненных точек
       Serial.println("Thats what in EEPROM now:");
-      Blick(150);
       for (i = 1; i <= 8; i++) {
         Serial.print("temp_");
         Serial.print(i);
         Serial.print("_");
         Serial.println(EEPROM.read(i));
-        Blick(150);
+        delay(150);
       }
       Serial.print("Check in start -> ");
       Serial.println(EEPROM.read(9));
-      Blick(150);
+      delay(150);
       Serial.print("cooltime -> ");
       Serial.println(EEPROM.read(10));
-      Blick(150);
+      delay(150);
       Serial.print("delaytime -> ");
       Serial.println(EEPROM.read(11));
       smsResult = true;
     }
     if (sms.substring(0, 3) == "ram") {  //вывод в терминал из оперативки сохраненных точек
       Serial.println("Thats what in RAM now:");
-      Blick(150);
       for (i = 1; i <= 8; i++) {
         Serial.print("temp_");
         Serial.print(i);
         Serial.print("->");
         Serial.println(temp[i]);
-        Blick(150);
+        delay(150);
       }
       smsResult = true;
     }
@@ -393,5 +384,5 @@ void loop() {
   //if (temp >= 90) {
   if (temp_toj < temp[8] &&  manual == 0) RelayState(1, 1, 1, 1);
 
-  Blick(delaytime); // таймаут
+  delay(delaytime); // таймаут
 }
