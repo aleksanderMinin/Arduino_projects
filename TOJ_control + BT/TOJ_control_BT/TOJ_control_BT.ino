@@ -1,10 +1,8 @@
-/* программа для управления спаркой вентиляторов радиатора
-  УАЗ патриот с радиатором от TLC100
-  при включании запускаются вентиляторы на X сек для проверки работы
-  включается одна обмотка одного вентилятора при 80
-  при 85* включается один на полную
-  при 90 включается второй на полную
-  2016год
+/* программа для управления спаркой вентиляторов по показаниям температуры
+  using https://github.com/mikaelpatel/Arduino-Scheduler
+  TODO: using https://github.com/coryjfowler/MCP_CAN_lib
+
+  2018год
   ячейка EEPROM[0..8] - точки температуры
   ячейка EEPROM[9] - флаг вкл/выкл вентиляторы в начале пуска (check)
   ячейка EEPROM[10] - время работы в первое включение          (cooltime)
@@ -24,21 +22,20 @@ int relayPin[5] = {0, 5, 6, 7, 8}; // пины на реле 1,2,3,4
 int analogPin = 0;          // пин аналоговый вход для датчика температуры
 boolean smsResult = false;  // результат правильного сообщения с терминала
 int temp_val;               // временная переменная для вычисления
-int temp[9];                // границы вкл/выкл температуры(точки) (0 - лишний)
+int dotTemp[9];             // границы вкл/выкл температуры(точки) (0 - лишний)
 bool relays[5];             // состояние реле
 int temp_toj;               // значение с датчика температуры
 byte i;                     // переменная для циклов
 int delaytime;              // время задержки основного цикла работы EEPROM 11
 OneWire ds(4);              // пин датчика температуры
 
-const byte averageFactor = 5;   // коэффициент сглаживания показаний (0 не ставить!)
-                                // чем выше, тем больше "инерционность"
+const byte averageFactor = 5;   // коэффициент сглаживания показаний датчика температуры (0 не ставить!), чем выше, тем больше "инерционность"
 //шота для обмена по шине CAN
 long unsigned int rxId;
 unsigned char len = 0;
 unsigned char rxBuf[8];
 
-MCP_CAN CAN0(10);	// Set CS to pin 10
+MCP_CAN CAN0(10);  // Set CS to pin 10
 
 void setup() {
   pinMode(analogPin, INPUT); //инициализация пина с термодатчиком
@@ -59,7 +56,7 @@ void setup() {
   //вкл/выкл вентиляторы в начале пуска
   if (EEPROM.read(9) == 1) {
     RelayState(1, 1, 1, 1);        //включаем все вентиляторы
-	delay(EEPROM.read(10) * 1000); //время работы в начале пуска(cooltime)
+  delay(EEPROM.read(10) * 1000); //время работы в начале пуска(cooltime)
 
     /* отключаем вентиляторы последовательно для проверки
       и выявления неисправного*/
@@ -70,12 +67,12 @@ void setup() {
   }
 
   for (i = 1; i <= 8; i++) //считываем точки температуры из постоянной памяти
-    temp[i] = EEPROM.read(i);
+    dotTemp[i] = EEPROM.read(i);
 
-  Scheduler.startLoop(loopTalk);
-  Scheduler.startLoop(loopTempToj);
-  //Scheduler.startLoop(loopTemp);
-  //Scheduler.startLoop(loopMCPRecive);
+  Scheduler.startLoop(TalkLoop);
+  Scheduler.startLoop(TojTempLoop);
+  //Scheduler.startLoop(ModuleTempLoop);
+  //Scheduler.startLoop(MCPReciveLoop);
 }
 
 // перезагрузка
@@ -102,14 +99,14 @@ void(* resetFunc) (void) = 0;
 //xxxMmMmMmCdC
 //234567890123
 //2-------3---
-void loopTalk() {
+void TalkLoop() {
   if (Serial.available() > 0 || smsbuffer.length() > 0) {   //если есть сообщение
 
-	  //добавляем сообщения в буфер
+    //добавляем сообщения в буфер
     smsbuffer = smsbuffer + char('\n') + Serial.readString();
 
     //выбираем из буфера строку
-	  sms = "";
+    sms = "";
     while ( byte(smsbuffer[0]) != 10 && smsbuffer.length() > 0){
       sms = sms + smsbuffer[0];
       smsbuffer.remove(0,1);
@@ -122,26 +119,27 @@ void loopTalk() {
     Serial.println(sms);
     smsResult = false;
 
-    if (sms.substring(0, 2) == "on") {    // включаем все реле
+    if (sms.substring(0, 2) == "on") { // включаем все реле
       manual = -1;
       Serial.println("manual on");
-	    RelayState(1, 1, 1, 1);
+      RelayState(1, 1, 1, 1);
       smsResult = true;
     }
     if (sms.substring(0, 3) == "off") { // выключаем все реле
       manual = -2;
       Serial.println("manual off");
-	    RelayState(0, 0, 0, 0);
+      RelayState(0, 0, 0, 0);
       smsResult = true;
     }
-    if (sms.substring(0, 2) == "no") {
-  		manual = 0;
-  		Serial.println("manual no");
-  		smsResult = true;
-  	}
+    if (sms.substring(0, 2) == "no") { // выключаем ручной режим
+      manual = 0;
+      Serial.println("manual no");
+      smsResult = true;
+    }
     // 14 положений отдельного включения
+    // 14 = 2^4 - 2(on & off)
     if (sms.substring(0, 6) == "manual") {
-  		manual = (int(sms[7]) - 48) * 10 + int(sms[6]) - 48;
+      manual = (int(sms[7]) - 48) * 10 + int(sms[6]) - 48;
         switch (manual) {
           case 1:
             RelayState(1,0,0,0);
@@ -189,7 +187,7 @@ void loopTalk() {
             manual = 0;
           break;
         }
-  	}
+    }
     //задание точки температуры
     //N - порядковый номер точки, ххх - трехзначное число с датчика температуры
     //tmpNxxx - set tempreture of dot, N - nomber of dot, xxx - temp of dot
@@ -198,6 +196,7 @@ void loopTalk() {
       EEPROM.write(int(sms[3]) - 48, byte((int(sms[4]) - 48) * 100 + (int(sms[5]) - 48) * 10 + (int(sms[6]) - 48)));
       smsResult = true;
     }
+
     if (sms.substring(0, 5) == "flash") {  //вывод в терминал из памяти сохраненных точек
       Serial.println("Thats what in EEPROM now:");
       for (i = 1; i <= 8; i++) {
@@ -207,6 +206,7 @@ void loopTalk() {
         Serial.println(EEPROM.read(i));
         delay(150);
       }
+
       Serial.print("Check in start -> ");
       Serial.println(EEPROM.read(9));
       delay(150);
@@ -217,17 +217,19 @@ void loopTalk() {
       Serial.println(EEPROM.read(11));
       smsResult = true;
     }
+
     if (sms.substring(0, 3) == "ram") {  //вывод в терминал из оперативки сохраненных точек
       Serial.println("Thats what in RAM now:");
       for (i = 1; i <= 8; i++) {
         Serial.print("temp_");
         Serial.print(i);
         Serial.print("->");
-        Serial.println(temp[i]);
+        Serial.println(dotTemp[i]);
         delay(150);
       }
       smsResult = true;
     }
+
     if (sms.substring(0, 5) == "check") {
       if (EEPROM.read(9) != 0) {
         EEPROM.write(9, 0);
@@ -241,6 +243,7 @@ void loopTalk() {
       }
       smsResult = true;
     }
+
     if (sms.substring(0, 8) == "cooltime") {
       if (sms[8] == '0')  {
         Serial.print("cooltime now -> ");
@@ -295,7 +298,7 @@ void loopTalk() {
 }
 
 // вывод температуры в распред коробке
-void Temp() {
+void ModuleTempLoop() {
   byte data[2];
   ds.reset();
   ds.write(0xCC);
@@ -314,7 +317,7 @@ void Temp() {
 }
 
 // MCP CAN  BUS
-void loopMCPRecive(){
+void MCPReciveLoop(){
   if (!digitalRead(2))                        // If pin 2 is low, read receive buffer
   {
     CAN0.readMsgBuf(&len, rxBuf);              // Read data: len = data length, buf = data byte(s)
@@ -351,7 +354,7 @@ void RelayState(boolean r1, boolean r2, boolean r3, boolean r4) {
   else digitalWrite(relayPin[4], HIGH);
 }
 
-void loopTempToj() {
+void TojTempLoop() {
   int oldtemp_toj = temp_toj;
   temp_toj = analogRead(analogPin);
   // усреднение значение с датчика температуры ОЖ
@@ -367,23 +370,24 @@ void loop() {
 
   //все выключено = прогрев
   //if (temp >= 0 && temp < 82 && hardon != 1) {
-  if (temp_toj >= temp[1] && manual == 0) RelayState(0, 0, 0, 0);
+  if (temp_toj >= dotTemp[1] && manual == 0) RelayState(0, 0, 0, 0);
 
   // включения 1 обмотки 1го мотора = лёгкий обдув
   //if (temp >= 82 && temp < 85 && hardon != 1) {
-  if (temp_toj >= temp[3] && temp_toj < temp[2] && manual == 0) RelayState(1, 0, 0, 0);
+  if (temp_toj >= dotTemp[3] && temp_toj < dotTemp[2] && manual == 0) RelayState(1, 0, 0, 0);
 
   // включает 1 мотор полность
   //if (temp >= 85 && temp < 87 && hardon != 1) {
-  if (temp_toj >= temp[4] && temp_toj < temp[6] &&  manual == 0) RelayState(1, 1, 0, 0);
+  if (temp_toj >= dotTemp[4] && temp_toj < dotTemp[6] &&  manual == 0) RelayState(1, 1, 0, 0);
 
   // включает 1 мотор полность и половину второго
   //if (temp >= 87 && temp < 90 && hardon != 1) {
-  if (temp_toj >= temp[7] && temp_toj < temp[6] &&  manual == 0) RelayState(1, 1, 1, 0);
+  if (temp_toj >= dotTemp[7] && temp_toj < dotTemp[6] &&  manual == 0) RelayState(1, 1, 1, 0);
 
   // включает два мотора на полную
   //if (temp >= 90) {
-  if (temp_toj < temp[8] &&  manual == 0) RelayState(1, 1, 1, 1);
+  if (temp_toj < dotTemp[8] &&  manual == 0) RelayState(1, 1, 1, 1);
 
   delay(delaytime); // таймаут
 }
+
